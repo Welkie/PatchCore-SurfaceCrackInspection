@@ -41,7 +41,7 @@ def run_patchcore_experiment(data_path, backbone_name, layers, ratio, device, ba
     if ratio >= 1.0 or np.isclose(ratio, 1.0):
         sampler = patchcore.sampler.IdentitySampler()
     else:
-        sampler = patchcore.sampler.GreedyCoresetSampler(ratio, device)
+        sampler = patchcore.sampler.ApproximateGreedyCoresetSampler(ratio, device)
 
     # 3. Initialize PatchCore
     nn_method = patchcore.common.FaissNN(on_gpu=torch.cuda.is_available(), num_workers=num_workers)
