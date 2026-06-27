@@ -134,8 +134,8 @@ class ConcreteDataset(torch.utils.data.Dataset):
         else:
             raise ValueError(f"Unknown split: {split}")
 
-        # Directory to cache pseudo-masks on disk
-        self.pseudo_mask_dir = os.path.join(source, "pseudo_masks")
+        # Directory to cache pseudo-masks on disk (use writeable current working directory)
+        self.pseudo_mask_dir = os.path.abspath(os.path.join(os.getcwd(), "pseudo_masks"))
         if self.use_pseudo_masks:
             os.makedirs(self.pseudo_mask_dir, exist_ok=True)
 
