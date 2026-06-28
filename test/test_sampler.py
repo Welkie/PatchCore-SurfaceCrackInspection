@@ -18,7 +18,6 @@ def _dummy_constant_features(number_of_examples, feature_dimension):
     return torch.ones([number_of_examples, feature_dimension])
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Fails for non-GPU machine.")
 def test_standard_greedy_coreset_sampling():
     feature_dimension = 2
     init_features = _dummy_features(feature_dimension)
@@ -38,7 +37,6 @@ def test_standard_greedy_coreset_sampling():
     )
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Fails for non-GPU machine.")
 def test_approximate_greedy_coreset_sampling():
     feature_dimension = 2
     init_features = _dummy_features(feature_dimension)
@@ -59,7 +57,6 @@ def test_approximate_greedy_coreset_sampling():
     )
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Fails for non-GPU machine.")
 def test_coreset_sampling_on_same_samples():
     feature_dimension = 2
     init_features = _dummy_constant_features(5000, feature_dimension)
@@ -78,7 +75,6 @@ def test_coreset_sampling_on_same_samples():
     assert len(torch.unique(subsampled_features, dim=0)) == 1
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Fails for non-GPU machine.")
 def test_random_sampling():
     init_features = _dummy_features(feature_dimension=2)
 
@@ -93,7 +89,6 @@ def test_random_sampling():
     )
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Fails for non-GPU machine.")
 def test_type_retention():
     feature_dimension = 2
     init_features = _dummy_features(feature_dimension)
@@ -114,7 +109,6 @@ def test_type_retention():
     assert isinstance(subsampled_features_numpy, type(init_features.numpy()))
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="Fails for non-GPU machine.")
 def test_johnsonlindenstrauss_reduction():
     feature_dimension = 256
     init_features = _dummy_features(feature_dimension)

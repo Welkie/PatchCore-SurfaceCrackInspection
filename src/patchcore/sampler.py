@@ -104,13 +104,10 @@ class GreedyCoresetSampler(BaseSampler):
             select_idx = torch.argmax(coreset_anchor_distances).item()
             coreset_indices.append(select_idx)
 
-            coreset_select_distance = distance_matrix[
-                :, select_idx : select_idx + 1  # noqa E203
-            ]
-            coreset_anchor_distances = torch.cat(
-                [coreset_anchor_distances.unsqueeze(-1), coreset_select_distance], dim=1
+            coreset_select_distance = distance_matrix[:, select_idx]
+            coreset_anchor_distances = torch.min(
+                coreset_anchor_distances, coreset_select_distance
             )
-            coreset_anchor_distances = torch.min(coreset_anchor_distances, dim=1).values
 
         return np.array(coreset_indices)
 
@@ -160,13 +157,9 @@ class ApproximateGreedyCoresetSampler(GreedyCoresetSampler):
                 coreset_select_distance = self._compute_batchwise_differences(
                     features, features[select_idx : select_idx + 1]  # noqa: E203
                 )
-                approximate_coreset_anchor_distances = torch.cat(
-                    [approximate_coreset_anchor_distances, coreset_select_distance],
-                    dim=-1,
-                )
                 approximate_coreset_anchor_distances = torch.min(
-                    approximate_coreset_anchor_distances, dim=1
-                ).values.reshape(-1, 1)
+                    approximate_coreset_anchor_distances, coreset_select_distance
+                )
 
         return np.array(coreset_indices)
 
