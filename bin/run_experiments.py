@@ -6,6 +6,7 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import PIL.Image
 from torch.utils.data import DataLoader
 
 # Add src/ to python path
