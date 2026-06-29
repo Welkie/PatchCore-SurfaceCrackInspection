@@ -148,6 +148,15 @@ def main():
     all_patchcore_results = []
     sample_visualizations = {}
 
+    # Initialize CSV file with headers immediately
+    csv_file = os.path.join(args.results_path, "patchcore_ablation_results.csv")
+    with open(csv_file, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "Backbone", "Coreset Ratio", "Image AUROC", "Pixel AUROC", "Image F1-Score",
+            "Fitting Time (s)", "Inference Speed (ms/img)", "Memory Points", "Memory Size (MB)"
+        ])
+
     # Run PatchCore Experiments (RQ1, RQ2, RQ3)
     for backbone in backbones:
         layers = ["layer2", "layer3"]
@@ -155,6 +164,16 @@ def main():
             try:
                 res = run_patchcore_experiment(args.data_path, backbone, layers, ratio, device)
                 all_patchcore_results.append(res)
+                
+                # Write this result to the CSV immediately
+                with open(csv_file, "a", newline="") as f:
+                    writer = csv.writer(f)
+                    writer.writerow([
+                        res["backbone"], f"{res['ratio']*100:.0f}%", f"{res['image_auroc']:.4f}", f"{res['pixel_auroc']:.4f}",
+                        f"{res['best_f1']:.4f}", f"{res['train_time_sec']:.2f}", f"{res['infer_speed_ms']:.2f}",
+                        res["memory_bank_points"], f"{res['memory_bank_size_mb']:.2f}"
+                    ])
+                
                 # Store sample heatmaps for 10% coreset ratio to visualize later
                 if np.isclose(ratio, 0.10) or (args.quick_run and np.isclose(ratio, 0.05)):
                     sample_visualizations[backbone] = {
@@ -164,22 +183,6 @@ def main():
                     }
             except Exception as e:
                 print(f"Error running experiment {backbone} at ratio {ratio}: {e}")
-
-    # Write PatchCore results to CSV
-    csv_file = os.path.join(args.results_path, "patchcore_ablation_results.csv")
-    with open(csv_file, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            "Backbone", "Coreset Ratio", "Image AUROC", "Pixel AUROC", "Image F1-Score",
-            "Fitting Time (s)", "Inference Speed (ms/img)", "Memory Points", "Memory Size (MB)"
-        ])
-        for r in all_patchcore_results:
-            writer.writerow([
-                r["backbone"], f"{r['ratio']*100:.0f}%", f"{r['image_auroc']:.4f}", f"{r['pixel_auroc']:.4f}",
-                f"{r['best_f1']:.4f}", f"{r['train_time_sec']:.2f}", f"{r['infer_speed_ms']:.2f}",
-                r["memory_bank_points"], f"{r['memory_bank_size_mb']:.2f}"
-            ])
-    print(f"\nSaved PatchCore ablation table to {csv_file}")
 
     # Run Supervised Baselines (RQ4)
     # We will invoke train_supervised.py programmatically for varying quantities of positive samples
