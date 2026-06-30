@@ -10,7 +10,7 @@ def generate_notebook():
                 "source": [
                     "# Cold-Start Anomaly Detection for Concrete Surface Crack Inspection using PatchCore\n",
                     "\n",
-                    "**Author:** Lam Huynh Khang — SE200666 — FPT University HCMC  \n",
+                    "**Author:** Lam Huynh Khang \u2014 SE200666 \u2014 FPT University HCMC  \n",
                     "**Supervisor:** Nguyen Xuan Huy, Lecturer, FPT University  \n",
                     "\n",
                     "This notebook implements the complete baseline and experimental pipeline for the project proposal **Cold-Start Anomaly Detection for Concrete Surface Crack Inspection using PatchCore with Pixel-Level Heatmap Localization**. It covers the evaluation of unsupervised PatchCore against supervised CNN classifiers.\n",
@@ -27,7 +27,7 @@ def generate_notebook():
                 "metadata": {},
                 "source": [
                     "## 1. Setup & Dependencies\n",
-                    "Install the required libraries, including `timm` for backbones and `faiss-gpu` for optimized nearest-neighbor searching."
+                    "Clone the repository, install required libraries, and install the `patchcore` package in editable mode."
                 ]
             },
             {
@@ -36,16 +36,22 @@ def generate_notebook():
                 "metadata": {},
                 "outputs": [],
                 "source": [
-                    "# Install PyTorch, timm, faiss-gpu, and scikit-learn\n",
-                    "!pip install timm faiss-gpu scikit-image scikit-learn matplotlib tqdm pillow click pandas"
+                    "# Remove old clone if any, clone latest version from repo\n",
+                    "!rm -rf PatchCore-SurfaceCrackInspection\n",
+                    "!git clone https://github.com/Welkie/PatchCore-SurfaceCrackInspection.git\n",
+                    "%cd PatchCore-SurfaceCrackInspection\n",
+                    "\n",
+                    "# Install required libraries and patchcore package in editable mode\n",
+                    "!pip install timm faiss-gpu scikit-image scikit-learn matplotlib tqdm pillow click pandas seaborn opencv-python-headless\n",
+                    "!pip install -e ."
                 ]
             },
             {
                 "cell_type": "markdown",
                 "metadata": {},
                 "source": [
-                    "## 2. Clone Repository or Verify Directory Structure\n",
-                    "We need to make sure we are inside the repository workspace containing `src/patchcore`, `bin/run_experiments.py`, and the baseline scripts."
+                    "## 2. Verify Environment & Imports\n",
+                    "Add `src/` and `bin/` to the Python path and verify that the custom dataset class can be imported."
                 ]
             },
             {
@@ -54,10 +60,6 @@ def generate_notebook():
                 "metadata": {},
                 "outputs": [],
                 "source": [
-                    "# If running on Kaggle, clone the repository containing the PatchCore code:\n",
-                    "# !git clone https://github.com/<YOUR_GITHUB_USERNAME>/patchcore-inspection.git\n",
-                    "# %cd patchcore-inspection\n",
-                    "\n",
                     "import os\n",
                     "import sys\n",
                     "\n",
@@ -65,8 +67,12 @@ def generate_notebook():
                     "sys.path.append(os.path.abspath('src'))\n",
                     "sys.path.append(os.path.abspath('bin'))\n",
                     "\n",
-                    "print(\"Current directory:\", os.getcwd())\n",
-                    "print(\"Files in directory:\", os.listdir('.'))"
+                    "print(\"Current workspace:\", os.getcwd())\n",
+                    "print(\"Files in workspace:\", os.listdir('.'))\n",
+                    "\n",
+                    "# Verify dataset class imports successfully\n",
+                    "from patchcore.datasets.concrete import ConcreteDataset, DatasetSplit\n",
+                    "print(\"\\nDataset class successfully imported and registered!\")"
                 ]
             },
             {
@@ -83,18 +89,29 @@ def generate_notebook():
                 "metadata": {},
                 "outputs": [],
                 "source": [
-                    "data_path = \"/kaggle/input/surface-crack-detection\"\n",
-                    "if not os.path.exists(data_path):\n",
-                    "    # Fallback to check nested folder structure if Kaggle extracts differently\n",
-                    "    nested_path = \"/kaggle/input/surface-crack-detection/surface-crack-detection\"\n",
-                    "    if os.path.exists(nested_path):\n",
-                    "        data_path = nested_path\n",
-                    "        \n",
-                    "if not os.path.exists(data_path):\n",
-                    "    raise ValueError(\"Dataset path not found. Please add arunrk7/surface-crack-detection to your Kaggle Notebook input.\")\n",
+                    "import os\n",
+                    "\n",
+                    "# Try multiple known Kaggle dataset path patterns\n",
+                    "possible_paths = [\n",
+                    "    \"/kaggle/input/datasets/arunrk7/surface-crack-detection\",\n",
+                    "    \"/kaggle/input/surface-crack-detection\",\n",
+                    "    \"/kaggle/input/surface-crack-detection/surface-crack-detection\",\n",
+                    "]\n",
+                    "\n",
+                    "data_path = None\n",
+                    "for p in possible_paths:\n",
+                    "    if os.path.exists(p):\n",
+                    "        data_path = p\n",
+                    "        break\n",
+                    "\n",
+                    "if data_path is None:\n",
+                    "    raise ValueError(\n",
+                    "        \"Dataset path not found. Please add 'arunrk7/surface-crack-detection' \"\n",
+                    "        \"to your Kaggle Notebook input.\"\n",
+                    "    )\n",
                     "else:\n",
-                    "    print(f\"Found dataset at: {data_path}\")\n",
-                    "    print(\"Subdirectories:\", os.listdir(data_path))"
+                    "    print(f\"Successfully located dataset at: {data_path}\")\n",
+                    "    print(\"Folders in dataset:\", os.listdir(data_path))"
                 ]
             },
             {
@@ -133,15 +150,32 @@ def generate_notebook():
                 "outputs": [],
                 "source": [
                     "import pandas as pd\n",
-                    "from IPython.display import display, HTML\n",
+                    "import os\n",
+                    "from IPython.display import display\n",
                     "\n",
-                    "print(\"=== TABLE 1: PATCHCORE CORESET ABLATION RESULTS (RQ3) ===\")\n",
-                    "df_pc = pd.read_csv(\"results/patchcore_ablation_results.csv\")\n",
-                    "display(df_pc)\n",
+                    "print(\"=\" * 60)\n",
+                    "print(\"TABLE 1: PATCHCORE CORESET ABLATION RESULTS (RQ3)\")\n",
+                    "print(\"=\" * 60)\n",
+                    "pc_path = \"results/patchcore_ablation_results.csv\"\n",
+                    "if os.path.exists(pc_path):\n",
+                    "    df_pc = pd.read_csv(pc_path)\n",
+                    "    display(df_pc)\n",
+                    "else:\n",
+                    "    print(\"PatchCore results not found. Experiment may not have completed yet.\")\n",
                     "\n",
-                    "print(\"\\n=== TABLE 2: SUPERVISED BASELINE DATA EFFICIENCY RESULTS (RQ4) ===\")\n",
-                    "df_sup = pd.read_csv(\"results/supervised/results.csv\")\n",
-                    "display(df_sup)"
+                    "print()\n",
+                    "print(\"=\" * 60)\n",
+                    "print(\"TABLE 2: SUPERVISED BASELINE DATA EFFICIENCY RESULTS (RQ4)\")\n",
+                    "print(\"=\" * 60)\n",
+                    "sup_path = \"results/supervised/results.csv\"\n",
+                    "if os.path.exists(sup_path):\n",
+                    "    df_sup = pd.read_csv(sup_path)\n",
+                    "    if len(df_sup) > 0:\n",
+                    "        display(df_sup)\n",
+                    "    else:\n",
+                    "        print(\"Supervised results CSV exists but is empty. Experiments may still be running.\")\n",
+                    "else:\n",
+                    "    print(\"Supervised results not found. Experiments may still be running.\")"
                 ]
             },
             {
@@ -149,7 +183,7 @@ def generate_notebook():
                 "metadata": {},
                 "source": [
                     "## 6. Scientific Visualization Plots\n",
-                    "Render the generated evaluation plots directly in the notebook to visualy answer RQ3 and RQ4."
+                    "Render the generated evaluation plots directly in the notebook to visually answer RQ3 and RQ4."
                 ]
             },
             {
@@ -159,29 +193,40 @@ def generate_notebook():
                 "outputs": [],
                 "source": [
                     "from PIL import Image\n",
+                    "import os\n",
                     "import matplotlib.pyplot as plt\n",
                     "\n",
                     "plots = [\n",
                     "    (\"results/plot_auroc_vs_coreset.png\", \"Coreset Subsampling Impact on Image AUROC\"),\n",
                     "    (\"results/plot_latency_vs_coreset.png\", \"Inference Speed vs. Coreset Subsampling Ratio\"),\n",
-                    "    (\"results/plot_data_efficiency.png\", \"Data Efficiency Curve: Unsupervised PatchCore vs. Supervised CNNs\")\n",
+                    "    (\"results/plot_data_efficiency.png\", \"Data Efficiency Curve: Unsupervised PatchCore vs. Supervised CNNs\"),\n",
                     "]\n",
                     "\n",
+                    "found_any = False\n",
                     "for p, title in plots:\n",
                     "    if os.path.exists(p):\n",
-                    "        print(f\"\\n=== {title} ===\")\n",
+                    "        found_any = True\n",
+                    "        print(f\"\\n{'='*60}\")\n",
+                    "        print(f\"{title}\")\n",
+                    "        print(f\"{'='*60}\")\n",
                     "        img = Image.open(p)\n",
                     "        plt.figure(figsize=(10, 6))\n",
                     "        plt.imshow(img)\n",
                     "        plt.axis('off')\n",
-                    "        plt.show()"
+                    "        plt.tight_layout()\n",
+                    "        plt.show()\n",
+                    "    else:\n",
+                    "        print(f\"\\n[SKIP] Plot not found: {p}\")\n",
+                    "\n",
+                    "if not found_any:\n",
+                    "    print(\"\\nNo plots were found. Please re-run Cell 4 (experiments) first.\")"
                 ]
             },
             {
                 "cell_type": "markdown",
                 "metadata": {},
                 "source": [
-                    "## 7. Qualitative visual heatmaps (RQ2)\n",
+                    "## 7. Qualitative Visual Heatmaps (RQ2)\n",
                     "Display the qualitative visual localization. For each tested backbone, this shows the Input Image, the generated Pseudo-Ground-Truth Mask, and the resulting PatchCore Anomaly Heatmap."
                 ]
             },
@@ -191,15 +236,29 @@ def generate_notebook():
                 "metadata": {},
                 "outputs": [],
                 "source": [
+                    "from PIL import Image\n",
+                    "import os\n",
+                    "import matplotlib.pyplot as plt\n",
+                    "\n",
+                    "found_any = False\n",
                     "for backbone in [\"resnet18\", \"wideresnet50\"]:\n",
                     "    p = f\"results/visual_localization_{backbone}.png\"\n",
                     "    if os.path.exists(p):\n",
-                    "        print(f\"\\n=== Qualitative Crack Heatmap Overlay ({backbone}) ===\")\n",
+                    "        found_any = True\n",
+                    "        print(f\"\\n{'='*60}\")\n",
+                    "        print(f\"Qualitative Crack Heatmap Overlay ({backbone})\")\n",
+                    "        print(f\"{'='*60}\")\n",
                     "        img = Image.open(p)\n",
                     "        plt.figure(figsize=(12, 10))\n",
                     "        plt.imshow(img)\n",
                     "        plt.axis('off')\n",
-                    "        plt.show()"
+                    "        plt.tight_layout()\n",
+                    "        plt.show()\n",
+                    "    else:\n",
+                    "        print(f\"\\n[SKIP] Heatmap not found for {backbone}: {p}\")\n",
+                    "\n",
+                    "if not found_any:\n",
+                    "    print(\"\\nNo heatmap visualizations were generated. Please re-run Cell 4 (experiments) first.\")"
                 ]
             }
         ],
@@ -210,15 +269,16 @@ def generate_notebook():
                 "name": "python3"
             },
             "language_info": {
-                "name": "python"
+                "name": "python",
+                "version": "3.10.0"
             }
         },
         "nbformat": 4,
-        "nbformat_minor": 2
+        "nbformat_minor": 4
     }
 
     # Save to the root of the workspace
-    target_notebook = "d:/My document/CPV301/patchcore-inspection/PatchCore_Concrete_Crack_Kaggle.ipynb"
+    target_notebook = os.path.join(os.path.dirname(os.path.dirname(__file__)), "PatchCore_Concrete_Crack_Kaggle.ipynb")
     with open(target_notebook, "w", encoding="utf-8") as f:
         json.dump(notebook, f, indent=1)
     print(f"Generated notebook at: {target_notebook}")

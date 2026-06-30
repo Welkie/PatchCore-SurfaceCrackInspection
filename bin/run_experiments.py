@@ -185,8 +185,10 @@ def main():
                 print(f"Error running experiment {backbone} at ratio {ratio}: {e}")
 
     # Run Supervised Baselines (RQ4)
-    # We will invoke train_supervised.py programmatically for varying quantities of positive samples
-    import subprocess
+    # Import and call train_supervised functions directly to avoid subprocess path issues on Kaggle
+    from train_supervised import build_supervised_datasets, train_model, evaluate_model
+    import csv as csv_module
+
     num_positives_list = [5, 10, 50, 100, 200]
     supervised_models = ["resnet50", "efficientnet_b0"]
     
@@ -194,21 +196,47 @@ def main():
         num_positives_list = [5]
         supervised_models = ["resnet50"]
 
+    sup_save_path = os.path.join(args.results_path, "supervised")
+    os.makedirs(sup_save_path, exist_ok=True)
+    sup_result_file = os.path.join(sup_save_path, "results.csv")
+    
+    # Write header
+    with open(sup_result_file, "w", newline="") as f:
+        writer = csv_module.writer(f)
+        writer.writerow(["Model", "Num Positives", "Epochs", "Batch Size", "LR", "Accuracy", "AUROC", "F1", "Precision", "Recall"])
+
     print("\n--- Running Supervised Baseline Training (Data Efficiency Analysis) ---")
     for model_name in supervised_models:
         for num_pos in num_positives_list:
-            cmd = [
-                "python", "bin/train_supervised.py",
-                "--data_path", args.data_path,
-                "--model_name", model_name,
-                "--num_positives", str(num_pos),
-                "--epochs", "5" if args.quick_run else "12",
-                "--batch_size", "16",
-                "--gpu", str(args.gpu),
-                "--save_path", os.path.join(args.results_path, "supervised")
-            ]
-            print(f"Running: {' '.join(cmd)}")
-            subprocess.run(cmd)
+            try:
+                print(f"\n--- Supervised: {model_name}, Num Positives={num_pos} ---")
+                epochs = 5 if args.quick_run else 12
+                batch_size = 16
+                lr = 1e-4
+
+                train_dataset, val_dataset, test_dataset = build_supervised_datasets(
+                    args.data_path, num_pos
+                )
+                print(f"  Train samples: {len(train_dataset)}, Test samples: {len(test_dataset)}")
+
+                train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
+                test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
+
+                model = train_model(model_name, train_loader, None, device, epochs=epochs, lr=lr)
+                metrics = evaluate_model(model, test_loader, device)
+
+                print(f"  Results: Acc={metrics['accuracy']:.4f}, AUROC={metrics['auroc']:.4f}, F1={metrics['f1']:.4f}")
+
+                # Append to CSV
+                with open(sup_result_file, "a", newline="") as f:
+                    writer = csv_module.writer(f)
+                    writer.writerow([
+                        model_name, num_pos, epochs, batch_size, lr,
+                        f"{metrics['accuracy']:.4f}", f"{metrics['auroc']:.4f}", f"{metrics['f1']:.4f}",
+                        f"{metrics['precision']:.4f}", f"{metrics['recall']:.4f}"
+                    ])
+            except Exception as e:
+                print(f"  Error: {e}")
 
     # Plot results
     generate_plots(args.results_path, all_patchcore_results, sample_visualizations)
@@ -252,6 +280,7 @@ def generate_plots(results_path, patchcore_results, sample_visualizations):
 
     # Plot 3: Data Efficiency Curve (RQ4)
     # Read supervised results from results_path/supervised/results.csv
+    # CSV format: Model, Num Positives, Epochs, Batch Size, LR, Accuracy, AUROC, F1, Precision, Recall
     supervised_file = os.path.join(results_path, "supervised", "results.csv")
     if os.path.exists(supervised_file):
         plt.figure(figsize=(9, 6))
@@ -261,10 +290,16 @@ def generate_plots(results_path, patchcore_results, sample_visualizations):
         with open(supervised_file, "r") as f:
             reader = csv.reader(f)
             header = next(reader)
+            # Find AUROC column index dynamically
+            auroc_idx = header.index("AUROC") if "AUROC" in header else 6
+            model_idx = header.index("Model") if "Model" in header else 0
+            numpos_idx = header.index("Num Positives") if "Num Positives" in header else 1
             for row in reader:
-                if len(row) < 7:
+                if len(row) < auroc_idx + 1:
                     continue
-                model, num_pos, _, _, _, _, auroc = row[0], int(row[1]), row[2], row[3], row[4], row[5], float(row[6])
+                model = row[model_idx]
+                num_pos = int(row[numpos_idx])
+                auroc = float(row[auroc_idx])
                 if model not in sup_data:
                     sup_data[model] = []
                 sup_data[model].append((num_pos, auroc))
@@ -279,8 +314,10 @@ def generate_plots(results_path, patchcore_results, sample_visualizations):
         # Add PatchCore (0 training positives) horizontal lines for comparison
         colors = ['r', 'g']
         for i, backbone in enumerate(set(r["backbone"] for r in patchcore_results)):
-            # Use 10% coreset ratio patchcore for comparison
+            # Use 10% coreset ratio patchcore for comparison (fallback to 1% if 10% not available)
             p_res = [r for r in patchcore_results if r["backbone"] == backbone and np.isclose(r["ratio"], 0.10)]
+            if not p_res:
+                p_res = [r for r in patchcore_results if r["backbone"] == backbone and np.isclose(r["ratio"], 0.01)]
             if p_res:
                 plt.axhline(y=p_res[0]["image_auroc"], color=colors[i % len(colors)], linestyle='-.', linewidth=2,
                             label=f"PatchCore ({backbone}, 0 defects)")
