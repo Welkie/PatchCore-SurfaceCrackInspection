@@ -332,15 +332,32 @@ def generate_plots(results_path, patchcore_results, sample_visualizations):
             plt.plot(xs, ys, marker='v', linewidth=2.5, label=f"Supervised {model}")
 
         # Add PatchCore (0 training positives) horizontal lines for comparison
-        colors = ['r', 'g']
-        for i, backbone in enumerate(set(r["backbone"] for r in patchcore_results)):
-            # Use 10% coreset ratio patchcore for comparison (fallback to 1% if 10% not available)
+        # Fixed color map keyed by name — avoids non-deterministic set() ordering
+        backbone_colors = {"resnet18": "red", "resnet50": "green"}
+        # Sort so resnet18 is always drawn first (below resnet50)
+        sorted_backbones = sorted(set(r["backbone"] for r in patchcore_results))
+        for backbone in sorted_backbones:
+            color = backbone_colors.get(backbone, "purple")
+            # Use 10% coreset for comparison (fallback to 1% if unavailable)
             p_res = [r for r in patchcore_results if r["backbone"] == backbone and np.isclose(r["ratio"], 0.10)]
             if not p_res:
                 p_res = [r for r in patchcore_results if r["backbone"] == backbone and np.isclose(r["ratio"], 0.01)]
             if p_res:
-                plt.axhline(y=p_res[0]["image_auroc"], color=colors[i % len(colors)], linestyle='-.', linewidth=2,
+                auroc_val = p_res[0]["image_auroc"]
+                # Different linestyle + linewidth so both lines stay visible when AUROC values are nearly equal
+                lw = 2.5 if backbone == "resnet18" else 1.5
+                ls = "--" if backbone == "resnet18" else "-."
+                plt.axhline(y=auroc_val, color=color, linestyle=ls, linewidth=lw,
                             label=f"PatchCore ({backbone}, 0 defects)")
+                # Annotate exact value on the right so both lines are distinguishable
+                plt.annotate(
+                    f"{auroc_val:.4f}",
+                    xy=(1.01, auroc_val),
+                    xycoords=("axes fraction", "data"),
+                    fontsize=9,
+                    color=color,
+                    va="center"
+                )
 
         plt.xlabel("Number of Labeled Defect (Positive) Samples in Training")
         plt.ylabel("Test Image AUROC")
