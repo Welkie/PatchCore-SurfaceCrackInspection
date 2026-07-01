@@ -100,10 +100,10 @@ class ConcreteDataset(torch.utils.data.Dataset):
             if f.lower().endswith(('.png', '.jpg', '.jpeg'))
         ])
 
-        # If dataset size is large, we limit to 2000 of each as per the proposal's default
-        # or we use the whole set if it is smaller.
-        n_neg_limit = min(2000, len(neg_files))
-        n_pos_limit = min(2000, len(pos_files))
+        # Limit per-class images to keep the feature bank small enough for Kaggle's RAM.
+        # 1000 negatives → ~49k patch vectors @ 512-dim → ~95 MB; 2000 would double that.
+        n_neg_limit = min(1000, len(neg_files))
+        n_pos_limit = min(1000, len(pos_files))
         neg_files = neg_files[:n_neg_limit]
         pos_files = pos_files[:n_pos_limit]
 

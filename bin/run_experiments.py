@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import csv
+import gc
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -24,15 +25,21 @@ from patchcore.datasets.concrete import ConcreteDataset, DatasetSplit
 sns.set_theme(style="whitegrid")
 plt.rcParams.update({'font.size': 12, 'axes.labelsize': 14, 'axes.titlesize': 16})
 
-def run_patchcore_experiment(data_path, backbone_name, layers, ratio, device, batch_size=8, num_workers=4):
+def run_patchcore_experiment(data_path, backbone_name, layers, ratio, device, batch_size=4, num_workers=2):
     print(f"\n--- Running PatchCore: Backbone={backbone_name}, Ratio={ratio:.2f} ---")
-    
+
+    # Free GPU memory from previous run before allocating new tensors
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
     # Load loaders
+    pin = torch.cuda.is_available()
     train_dataset = ConcreteDataset(data_path, split=DatasetSplit.TRAIN, resize=256, imagesize=224)
     test_dataset = ConcreteDataset(data_path, split=DatasetSplit.TEST, resize=256, imagesize=224)
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin)
 
     # 1. Load backbone
     backbone = patchcore.backbones.load(backbone_name)
@@ -52,8 +59,8 @@ def run_patchcore_experiment(data_path, backbone_name, layers, ratio, device, ba
         layers_to_extract_from=layers,
         device=device,
         input_shape=(3, 224, 224),
-        pretrain_embed_dimension=1024,
-        target_embed_dimension=1024,
+        pretrain_embed_dimension=512,   # reduced from 1024 to save memory
+        target_embed_dimension=512,     # reduced from 1024 to save memory
         patchsize=3,
         featuresampler=sampler,
         anomaly_score_num_nn=1,
@@ -138,9 +145,12 @@ def main():
     os.makedirs(args.results_path, exist_ok=True)
     
     # Define experiment parameters
-    backbones = ["resnet18", "wideresnet50"]
-    ratios = [0.01, 0.05, 0.10, 0.25, 0.50, 1.0]
-    
+    # Note: wideresnet50 replaced with resnet50 to keep memory footprint manageable on Kaggle.
+    # ratio=1.0 (IdentitySampler) is dropped because keeping all ~78k patch features in FAISS
+    # requires ~1.5 GB RAM alone; the coreset ablation still covers 1%→50%.
+    backbones = ["resnet18", "resnet50"]
+    ratios = [0.01, 0.05, 0.10, 0.25, 0.50]
+
     if args.quick_run:
         backbones = ["resnet18"]
         ratios = [0.01, 0.05]
@@ -183,6 +193,10 @@ def main():
                     }
             except Exception as e:
                 print(f"Error running experiment {backbone} at ratio {ratio}: {e}")
+                # Always clean up GPU memory after any failure
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
     # Run Supervised Baselines (RQ4)
     # Import and call train_supervised functions directly to avoid subprocess path issues on Kaggle
@@ -210,17 +224,23 @@ def main():
         for num_pos in num_positives_list:
             try:
                 print(f"\n--- Supervised: {model_name}, Num Positives={num_pos} ---")
-                epochs = 5 if args.quick_run else 12
+                epochs = 5 if args.quick_run else 10
                 batch_size = 16
                 lr = 1e-4
+
+                # Free memory before each supervised experiment
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
                 train_dataset, val_dataset, test_dataset = build_supervised_datasets(
                     args.data_path, num_pos
                 )
                 print(f"  Train samples: {len(train_dataset)}, Test samples: {len(test_dataset)}")
 
-                train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
-                test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
+                pin = torch.cuda.is_available()
+                train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=2, pin_memory=pin)
+                test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=2, pin_memory=pin)
 
                 model = train_model(model_name, train_loader, None, device, epochs=epochs, lr=lr)
                 metrics = evaluate_model(model, test_loader, device)
