@@ -373,16 +373,24 @@ def generate_plots(results_path, patchcore_results, sample_visualizations):
                 axes[idx, 0].set_title("Input Image")
                 
             # Display Pseudo-GT Mask
-            axes[idx, 1].imshow(mask, cmap='gray')
+            # Squeeze channel dim if mask has shape (1, H, W) — matplotlib expects (H, W)
+            mask_2d = np.squeeze(mask) if isinstance(mask, np.ndarray) else mask
+            if hasattr(mask_2d, 'ndim') and mask_2d.ndim == 3 and mask_2d.shape[0] == 1:
+                mask_2d = mask_2d[0]
+            axes[idx, 1].imshow(mask_2d, cmap='gray')
             axes[idx, 1].axis('off')
             if idx == 0:
                 axes[idx, 1].set_title("Pseudo-GT Mask")
                 
             # Display Anomaly Heatmap
             # Overlay heatmap on grayscale image for premium look
+            # Squeeze channel dim if seg has shape (1, H, W)
+            seg_2d = np.squeeze(seg) if isinstance(seg, np.ndarray) else seg
+            if hasattr(seg_2d, 'ndim') and seg_2d.ndim == 3 and seg_2d.shape[0] == 1:
+                seg_2d = seg_2d[0]
             gray_img = np.array(img.convert("L"))
             axes[idx, 2].imshow(gray_img, cmap='gray')
-            im = axes[idx, 2].imshow(seg, cmap='jet', alpha=0.5)
+            im = axes[idx, 2].imshow(seg_2d, cmap='jet', alpha=0.5)
             axes[idx, 2].axis('off')
             if idx == 0:
                 axes[idx, 2].set_title("Anomaly Heatmap")
